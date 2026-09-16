@@ -9,7 +9,7 @@ const TOKEN = '8130863824:AAEVg5aAWetfi79N5qC6CipWt7PVpo-yxJU';
 const ADMIN_ID = 1002670694;
 const STATUS_FILE = path.join(__dirname, 'bot_status.json');
 const SUBS_FILE = path.join(__dirname, 'subscribers.json');
-const LIMIT = 50;
+const LIMIT = 30; // تم تعديل الحد إلى 30 بناءً على طلبك
 
 // تفعيل البوت باستخدام الـ Long Polling (لا يحتاج إلى Webhook)
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -85,6 +85,18 @@ function isSubscribed(userId) {
     const subs = getSubscribers();
     const now = Math.floor(Date.now() / 1000);
     return subs[userId] && subs[userId] > now;
+}
+
+// دالة مساعدة لإرسال الرسائل الطويلة (صفحة الروابط والقوائم) لتجنب حظر تليجرام
+async function sendLongMessage(chatId, text) {
+    const MAX_LENGTH = 4000;
+    if (text.length <= MAX_LENGTH) {
+        await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+        return;
+    }
+    for (let i = 0; i < text.length; i += MAX_LENGTH) {
+        await bot.sendMessage(chatId, text.substring(i, i + MAX_LENGTH), { parse_mode: 'Markdown' });
+    }
 }
 
 // --- معالجة الرسائل الواردة ---
@@ -183,7 +195,7 @@ bot.on('message', async (msg) => {
                     const status = exp > now ? `🟢 نشط (ينتهي: ${new Date(exp * 1000).toISOString().replace('T', ' ').substring(0, 16)})` : "🔴 منتهي";
                     listMsg += `• \`${uid}\` 👈 ${status}\n`;
                 }
-                await bot.sendMessage(chatId, listMsg, { parse_mode: 'Markdown' });
+                await sendLongMessage(chatId, listMsg);
             }
             return;
         }
@@ -206,7 +218,7 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    await bot.sendMessage(chatId, `🔍 جاري البحث في GitHub وجلب أول ${LIMIT} مشاريع...`);
+    await bot.sendMessage(chatId, `🔍 جاري البحث في GitHub وجلب أول ${LIMIT} مشاريع مع الروابط والملفات...`);
 
     try {
         const searchUrl = `https://api.github.com/search/repositories?q=${encodeURIComponent(text)}&sort=stars&order=desc&per_page=${LIMIT}`;
@@ -221,54 +233,70 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        let messageMs = `🎯 تم العثور على ${projects.length} مشروعًا، جاري إرسال القائمة والملفات:\n\n`;
+        // إنشاء وتنسيق صفحة الروابط وقائمة المشاريع المضبوطة
+        let messageMs = `🎯 **تم العثور على ${projects.length} مشروعًا (صفحة الروابط):**\n\n`;
         projects.forEach((project, index) => {
             const num = index + 1;
-            const nameHeroes = project.name;
+            const nameHeroes = project.name; // تم تصحيح اسم المتغير هنا
             const urlPro = project.html_url;
-            messageMs += `${num}. ${name_heroes}\n🔗 ${urlPro}\n---------------------------------------\n`;
+            messageMs += `${num}. **${nameHeroes}**\n🔗 ${urlPro}\n---------------------------------------\n`;
         });
 
-        await bot.sendMessage(chatId, messageMs);
+        // إرسال صفحة الروابط للعميل
+        await sendLongMessage(chatId, messageMs);
 
-        // تنزيل وإرسال الملفات المضغوطة للمشاريع
+        // تنزيل وإرسال جميع الملفات المضغوطة للمشاريع بكفاءة ودعم فروع متعددة
         for (const project of projects) {
             const cleanName = project.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
             const urlPro = project.html_url;
-            const defaultBranch = (project.default_branch || 'main').replace(/[^a-zA-Z0-9_\-]/g, '');
-            const zipUrl = `${urlPro}/archive/refs/heads/${defaultBranch}.zip`;
+            const branches = [...new Set([project.default_branch, 'main', 'master'])].filter(Boolean);
 
             const tempFile = path.join(os.tmpdir(), `${cleanName}_${Date.now()}_${Math.floor(Math.random() * 900 + 100)}.zip`);
+            let downloaded = false;
 
-            try {
-                const writer = fs.createWriteStream(tempFile);
-                const zipResponse = await axios({
-                    url: zipUrl,
-                    method: 'GET',
-                    responseType: 'stream',
-                    timeout: 120000,
-                    headers: { 'User-Agent': 'TelegramBot-Aehabbb/1.0' }
-                });
+            for (const branch of branches) {
+                try {
+                    const zipUrl = `${urlPro}/archive/refs/heads/${branch}.zip`;
+                    const writer = fs.createWriteStream(tempFile);
+                    const zipResponse = await axios({
+                        url: zipUrl,
+                        method: 'GET',
+                        responseType: 'stream',
+                        timeout: 120000,
+                        headers: { 'User-Agent': 'TelegramBot-Aehabbb/1.0' }
+                    });
 
-                zipResponse.data.pipe(writer);
+                    zipResponse.data.pipe(writer);
 
-                await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve);
-                    writer.on('error', reject);
-                });
+                    await new Promise((resolve, reject) => {
+                        writer.on('finish', resolve);
+                        writer.on('error', reject);
+                    });
 
-                if (fs.existsSync(tempFile) && fs.statSync(tempFile).size > 0) {
+                    if (fs.existsSync(tempFile) && fs.statSync(tempFile).size > 0) {
+                        downloaded = true;
+                        break;
+                    }
+                } catch (err) {
+                    if (fs.existsSync(tempFile)) {
+                        fs.unlinkSync(tempFile);
+                    }
+                }
+            }
+
+            if (downloaded && fs.existsSync(tempFile) && fs.statSync(tempFile).size > 0) {
+                try {
                     await bot.sendDocument(chatId, tempFile, {
                         caption: `📦 **مشروع:** ${cleanName}\n\n🔗 ${urlPro}`,
                         parse_mode: 'Markdown'
                     });
+                } catch (docErr) {
+                    // تجاهل الخطأ في حال تعذر إرسال ملف فردي
                 }
-            } catch (err) {
-                // تجاهل أخطاء المشروع الفردي إن لم يتوفر الـ zip
-            } finally {
-                if (fs.existsSync(tempFile)) {
-                    fs.unlinkSync(tempFile);
-                }
+            }
+
+            if (fs.existsSync(tempFile)) {
+                fs.unlinkSync(tempFile);
             }
         }
 
