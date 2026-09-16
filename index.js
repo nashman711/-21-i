@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 
 // --- الإعدادات الأساسية ---
-const TOKEN = '8152040731:AAH8a533UrR2vFL3oJ_SOCPm9xUjw4KYJ7c';
+const TOKEN = '8130863824:AAEVg5aAWetfi79N5qC6CipWt7PVpo-yxJU';
 const ADMIN_ID = 1002670694;
 const STATUS_FILE = path.join(__dirname, 'bot_status.json');
 const SUBS_FILE = path.join(__dirname, 'subscribers.json');
