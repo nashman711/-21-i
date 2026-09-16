@@ -1,16 +1,13 @@
 {
-  "name": "telegram-bot-js",
+  "name": "github-search-telegram-bot",
   "version": "1.0.0",
-  "description": "Telegram Bot converted from PHP to Node.js",
+  "description": "Telegram bot for GitHub search and project downloading with subscription system in Node.js",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "axios": "^1.7.2",
-    "express": "^4.19.2"
-  },
-  "engines": {
-    "node": ">=18.x"
+    "axios": "^1.7.0",
+    "node-telegram-bot-api": "^0.66.0"
   }
 }
