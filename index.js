@@ -142,7 +142,6 @@ function getBaghdadDateInfo() {
         if (p.type === 'dayPeriod') a = p.value.toUpperCase();
     }
     const tim1 = `${h}:${m}:${s}`;
-    const a_str = a === 'AM' ? 'AM' : 'PM';
     const e_str = a === 'AM' ? 'صباحاً' : 'مسائاً';
 
     const formatterDate = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Baghdad', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -261,6 +260,11 @@ const africa_indices = [8, 9, 17, 18, 19, 28, 31, 38, 41, 42, 61, 68, 69, 71, 75
 const asia_indices = [2, 4, 5, 6, 7, 10, 11, 13, 14, 20, 22, 24, 25, 35, 40, 52, 55, 57, 60, 64, 66, 72, 74, 81, 121, 143, 148, 159, 161];
 const foreign_indices = [26, 33, 36, 39, 54, 65, 67, 70, 73, 79, 87, 88, 90, 92, 93, 94, 97, 101, 103, 104, 105, 109, 112, 113, 118, 122, 124, 127, 131, 142, 151, 156, 162, 164, 166, 169, 175, 180, 181, 187, 189, 193, 195, 197, 200];
 
+// مسار GET للتحقق من عمل الخادم
+app.get('/', (req, res) => {
+    res.send('🤖 Bot server is running successfully without webhooks!');
+});
+
 app.post('/', async (req, res) => {
     res.sendStatus(200);
 
@@ -268,13 +272,6 @@ app.post('/', async (req, res) => {
     if (!update) return;
 
     try {
-        await bot("setMyCommands", {
-            "commands": JSON.stringify([
-                { "command": "start", "description": "القائمة الرئيسية 🏡" },
-                { "command": "admin", "description": "لوحة التحكم ⚙️" }
-            ])
-        });
-
         let message = update.message || null;
         let chat_id = message ? message.chat.id : null;
         let text = message ? message.text : null;
@@ -292,6 +289,16 @@ app.post('/', async (req, res) => {
             id = update.callback_query.from.id;
         }
 
+        // معالجة الأزرار الفارغة أو عناوين الصفحات لتجنب تعليق الزر
+        if (data && data === "no_thing") {
+            await bot('answerCallbackQuery', {
+                'callback_query_id': update.callback_query.id,
+                'text': "ℹ️ هذا الزر للعرض فقط.",
+                'show_alert': false
+            });
+            return;
+        }
+
         let user_mention = user == null ? "لايوجد ❌" : `[@${user}]`;
 
         const bot_info_general = await bot('getMe');
@@ -303,7 +310,7 @@ app.post('/', async (req, res) => {
         const admins_list = ch_data.admins || admin;
         const forced_channels = ch_data.channels || [];
 
-        // الحماية القوية ضد الحظر والمستخدمين المحظورين
+        // الحماية ضد المستخدمين المحظورين
         if (id && banned_list.includes(String(id)) && !admins_list.includes(String(id))) {
             if (update.callback_query) {
                 await bot('answerCallbackQuery', {
@@ -682,7 +689,6 @@ app.post('/', async (req, res) => {
                     'text': `⚠️ تم تغيير وضع الصيانة إلى: ${storage_m.maintenance ? 'مفعلة' : 'معطلة'}`,
                     'show_alert': true
                 });
-                // Refresh admin panel
                 await bot('EditMessageText', {
                     'chat_id': chat_id,
                     'message_id': message_id,
@@ -706,7 +712,7 @@ app.post('/', async (req, res) => {
                 await bot('EditMessageText', {
                     'chat_id': chat_id,
                     'message_id': message_id,
-                    'text': `🚫 **قائمة المستخدمين المحظورين:**\n\n${b_list.length > 0 ? b_list.map(id => `• \`${id}\``).join('\n') : 'لا يوجد مستخدمين محظورين حالياً.'}`,
+                    'text': `🚫 **قائمة المستخدمين المحظورين:**\n\n${b_list.length > 0 ? b_list.map(uid => `• \`${uid}\``).join('\n') : 'لا يوجد مستخدمين محظورين حالياً.'}`,
                     'parse_mode': "MarkDown",
                     'reply_markup': JSON.stringify({
                         'inline_keyboard': [[{ 'text': "🔙 الرجوع للوحة التحكم", 'callback_data': "admin_home" }]]
@@ -715,7 +721,7 @@ app.post('/', async (req, res) => {
                 return;
             }
 
-            // معالجة الخطوات الإدارية النصية (Admin steps text input)
+            // معالجة الخطوات الإدارية النصية
             if (send.user_step[id] && admins_list.includes(String(id)) && text) {
                 const current_step = send.user_step[id];
 
@@ -1556,6 +1562,15 @@ app.post('/', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Bot server is running on port ${PORT}`);
+    // حذف الويب هوك تلقائياً عند التشغيل لضمان العمل السلس
+    await bot('deleteWebhook');
+    // تعيين أوامر البوت مرة واحدة عند الإقلاع
+    await bot("setMyCommands", {
+        "commands": JSON.stringify([
+            { "command": "start", "description": "القائمة الرئيسية 🏡" },
+            { "command": "admin", "description": "لوحة التحكم ⚙️" }
+        ])
+    });
 });
